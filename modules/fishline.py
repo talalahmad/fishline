@@ -1,3 +1,28 @@
+#!/usr/bin/env python 
+# -*- coding: utf-8 -*-
+############################################################################
+# 
+# Copyright (C) 2017 Talal Ahmad <ahmad@cs.nyu.edu>
+#
+# Fishline
+# 
+#
+# Fishline is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Fishline is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero Public License for more details.
+#
+# You should have received a copy of the GNU Affero Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+############################################################################
+
+
 import sys
 sys.path.append("..")
 from config import *
@@ -93,87 +118,61 @@ class fishline:
 		conn.close()
 
 	def receive(self, sender, to, text):
-		#parse the text message and see that is the state of the sender and respond back accordingly. 
-		#print 'in receive function of fishline';
-		conn = sqlite3.connect('/home/rhizomatica/fishline.db')
-		c=conn.cursor()
-		query = "INSERT into allMessages values(%d,'%s','%s');" %(time.time(),sender,text)
-		print query
-		c.execute(query)
-		conn.commit()
-		conn.close()
-		
-		text = text.lower();
-		print text
-		
-
 		senderState = self.getState(sender)
-
-		if to is '20000' and self.checkAdvertiser(sender) is True:
-			#self.state[sender] = 'probablyadvertiser'
-			self.setState(sender,'probablyadvertiser')
-			newText = "Want to advertise this: "+text+". Reply yes or no"
-			self.send(20000,sender,newText)
-			self.setAdd(sender,text)
-
+		sms_log.info("senderState=%s" %senderState);
+		sms_log.info("to=%s" %to);
+		if 'subscribe' in text.lower() and to == '20000':
+			self.setState(sender,'done');
+			self.send(20000,sender,'You are subscribed to fishline')
+			query = "Insert into advertisers values (%d,'%s','%s')" %(time.time(),sender,text.split()[-1])
+			conn = sqlite3.connect('/home/rhizomatica/fishline.db')
+			c=conn.cursor()
+			print query
+			c.execute(query)
+			conn.commit()
+			conn.close()
 			return
-		else:
-			if 'subscribe' in text and to == '20000':
-				#self.state[sender] = 'done'
-				self.setState(sender,'done');
-				self.send(20000,sender,'You are subscribed to fishline')
-				query = "Insert into advertisers values (%d,'%s','%s')" %(time.time(),sender,text.split()[-1])
-				conn = sqlite3.connect('/home/rhizomatica/fishline.db')
-				c=conn.cursor()
-				print query
-                		c.execute(query)
-                		conn.commit()
-                		conn.close()
-				return
-			if senderState == 'probablyadvertiser' and text=='yes':
-				query = "select initials from advertisers where frm = '%s'" %sender
-				conn = sqlite3.connect('/home/rhizomatica/fishline.db')
-				c = conn.cursor()
-				print query
-				c.execute(query)
-				initials = c.fetchone()
-				initials = initials[0]
+		elif to=='20000' and self.checkAdvertiser(sender) is True:# and senderState!='probablyadvertiser':
+			#self.state[sender] = 'probablyadvertiser'
+			query = "select initials from advertisers where frm = '%s'" %sender
+			conn = sqlite3.connect('/home/rhizomatica/fishline.db')
+			c = conn.cursor()
+			print query
+			c.execute(query)
+			initials = c.fetchone()
+			initials = initials[0]
+			conn.commit()
+			conn.close()
+			
+			#initials = 'TA'
+			self.setState(sender,'advertiser')
+			#self.lastadvertisement=self.advertisements[sender][-1]
+			#self.lastadvertiser = sender
+			print initials.upper()
+			string = ". If interested reply 'yes %s' " %(initials.upper())
+			#self.lastadvertisement=self.getAdd(sender)
+			self.lastadvertisement=text
+			self.sendbulk('30000',self.lastadvertisement+string)
+			return
+		elif 'yes ' in text.lower() and to =='30000':
+			initials = text.split()[-1]
+			query = "select frm from advertisers where initials = '%s'" %(initials)
+			conn=sqlite3.connect('/home/rhizomatica/fishline.db')
+			c = conn.cursor()
+			print query
+			c.execute(query)
+			advertiser = c.fetchone()
+			if advertiser is not None:
+				advertiser = advertiser[0]
 				conn.commit()
 				conn.close()
-				
-				#initials = 'TA'
-				self.setState(sender,'advertiser')
-				#self.lastadvertisement=self.advertisements[sender][-1]
-				#self.lastadvertiser = sender
-				print initials.upper()
-				string = ". If interested reply 'yes %s' " %(initials.upper())
-				self.lastadvertisement=self.getAdd(sender)
-				self.sendbulk('30000',self.lastadvertisement+string)
-
-				
-			elif senderState == 'probablyadvertiser':
-				self.setState(sender,'done')
-				self.send(20000, sender,'To send a Fish Line text your message to 20000');
-				return
- 
-			elif 'yes ' in text and to=='30000':
-				initials = text.split()[-1]
-				query = "select frm from advertisers where initials = '%s'" %(initials)
-				conn=sqlite3.connect('/home/rhizomatica/fishline.db')
-				c = conn.cursor()
-				print query
-				c.execute(query)
-				advertiser = c.fetchone()
-				if advertiser is not None:
-					advertiser = advertiser[0]
-					conn.commit()
-					conn.close()
-					self.send(30000,sender,'Please contact the advertiser at'+advertiser)
-				else:
-					self.send(30000,sender,'Please reply again, I did not find that advertiser.')
-				return
+				self.send(30000,sender,'Please contact the advertiser at'+advertiser)
+				self.send(30000,advertiser,'Please contact the buyer at'+sender)
 			else:
-				self.send(30000,sender,"Welcome to fishline. Contact 41969 for more information.")
+				self.send(30000,sender,'Please reply again, I did not find that advertiser.')
+			return
+		else:
+			self.send(30000,sender,"Welcome to fishline. Contact 43333 for more information.")
 				
 	
 	def send(self, frm, sender, text):
@@ -216,7 +215,7 @@ if __name__ == '__main__':
 	#fish.setState('1122114','hellow2')
 	#fish.setAdd('11221148054','advertise new potato');
 	#print fish.checkAdvertiser('11221148054');
-	fish.receive('11221148054','20000','advertisement');
-	fish.receive('11221148054','20000','yes');
+	fish.receive('11221148054','30000','yes TA');
+	#fish.receive('11221148054','20000','yes');
 	
 	#fish.sendbulk('30000','hello all');
